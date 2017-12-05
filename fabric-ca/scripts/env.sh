@@ -9,18 +9,22 @@
 # The following variables describe the topology and may be modified to provide
 # different organization names or the number of peers in each peer organization.
 #
-
-# Name of the docker-compose network
-NETWORK=fabric-ca
+COUCHDB="YES"
 
 # Names of the orderer organizations
-ORDERER_ORGS="org0"
+ORDERER_ORGS="oorg0"
 
 # Names of the peer organizations
 PEER_ORGS="org1 org2"
 
 # Number of peers in each peer organization
 NUM_PEERS=2
+
+# Number of orderer nodes in each orderer organization
+NUM_ORDERERS=1
+
+# Name of the docker-compose network
+NETWORK=fabric-ca
 
 #
 # The remainder of this file contains variables which typically would not be changed.
@@ -32,8 +36,15 @@ ORGS="$ORDERER_ORGS $PEER_ORGS"
 # Set to true to populate the "admincerts" folder of MSPs
 ADMINCERTS=true
 
-# Number of orderer nodes
-NUM_ORDERERS=1
+
+
+# Number of kafka nodes
+# NUM_KAFKAS=$NUM_ORDERERS*${#OORGS[@]}
+# NUM_KAFKAS=2
+
+# Number of zookeeper nodes
+# NUM_ZOOKEEPERS=$(($NUM_ORDERERS-1))
+# NUM_ZOOKEEPERS=1
 
 # The volume mount to share data between containers
 DATA=data
@@ -78,12 +89,55 @@ export FABRIC_CA_CLIENT_ID_AFFILIATION=org1
 # Set to true to enable use of intermediate CAs
 USE_INTERMEDIATE_CA=true
 
+function initOrgArrays {
+   # Set ORDERER_PORT_ARGS to the args needed to communicate with the 1st orderer
+   IFS=', ' read -r -a OORGS <<< "$ORDERER_ORGS"
+   # Convert PEER_ORGS to an array named PORGS
+   IFS=', ' read -r -a PORGS <<< "$PEER_ORGS"
+   NUM_KAFKAS=$((${NUM_ORDERERS}*${#OORGS[@]}))
+   NUM_ZOOKEEPERS=$(($NUM_KAFKAS-1))
+}
+
+
 # initOrgVars <ORG>
 function initOrgVars {
-   if [ $# -ne 1 ]; then
+    if [ $# -ne 1 ]; then
       echo "Usage: initOrgVars <ORG>"
       exit 1
-   fi
+    fi
+    if [ ${#PORGS[@]} = 0 ] ; then
+        initOrgArrays
+    fi    
+
+    ORG_INDEX=-1
+    CNT=0
+    for ((i = 0; i < ${#OORGS[@]}; ++i)); do
+      if [ "${OORGS[$i]}" = "$1" ] ; then
+        ORG_INDEX=$i
+        break
+      fi
+      CNT=$((CNT+1))
+    done
+    if [ $ORG_INDEX = -1 ] ; then
+        for ((i = 0; i < ${#PORGS[@]}; ++i)); do
+            if [ "${PORGS[$i]}" = "$1" ] ; then
+                ORG_INDEX=$(($i+$CNT))
+                break
+            fi
+        done
+    fi
+    if [ $ORG_INDEX = -1 ] ; then
+      echo "Organization NOT in ORG Array"
+      echo $1
+        echo "**********************************************************"
+        echo ${#OORGS[@]}
+        echo "**********************************************************"
+        echo "**********************************************************"
+        echo ${OORGS[$i]}
+        echo $ORG_INDEX
+      exit 1
+    fi
+
    ORG=$1
    ORG_CONTAINER_NAME=${ORG//./-}
    ROOT_CA_HOST=rca-${ORG}
@@ -163,6 +217,7 @@ function initOrdererVars {
    export ORDERER_GENERAL_TLS_PRIVATEKEY=$TLSDIR/server.key
    export ORDERER_GENERAL_TLS_CERTIFICATE=$TLSDIR/server.crt
    export ORDERER_GENERAL_TLS_ROOTCAS=[$INT_CA_CHAINFILE]
+   ORD_PORT=60$ORG_INDEX$2
 }
 
 # initPeerVars <ORG> <NUM>
@@ -180,6 +235,8 @@ function initPeerVars {
    PEER_LOGFILE=$LOGDIR/${PEER_NAME}.log
    MYHOME=/opt/gopath/src/github.com/hyperledger/fabric/peer
    TLSDIR=$MYHOME/tls
+   API_URL=80$ORG_INDEX$2
+   EVT_URL=90$ORG_INDEX$2
 
    export FABRIC_CA_CLIENT=$MYHOME
    export CORE_PEER_ID=$PEER_HOST

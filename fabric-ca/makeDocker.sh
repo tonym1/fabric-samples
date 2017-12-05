@@ -14,6 +14,7 @@ source $SDIR/scripts/env.sh
 
 function main {
    {
+   initOrgArrays  
    writeHeader
    writeRootFabricCA
    if $USE_INTERMEDIATE_CA; then
@@ -24,6 +25,12 @@ function main {
    writeRunFabric
    } > $SDIR/docker-compose.yml
    log "Created docker-compose.yml"
+   {
+    if [ $NUM_KAFKAS -gt 1 ]; then
+      writeBaseYaml
+    fi
+   } > $SDIR/dc-orderer-kafka-base.yml
+   log "Created dc-orderer-kafka-base.yml"
 }
 
 # Write services for the root fabric CA servers
@@ -38,6 +45,7 @@ function writeRootFabricCA {
 function writeIntermediateFabricCA {
    for ORG in $ORGS; do
       initOrgVars $ORG
+      API_URL=81${ORG_INDEX}4
       writeIntermediateCA
    done
 }
@@ -63,6 +71,20 @@ function writeSetupFabric {
 
 # Write services for fabric orderer and peer containers
 function writeStartFabric {
+    if [ $NUM_KAFKAS -gt 1 ]; then
+    COUNT=0
+    ZOO_CONNECT=""
+    ZOO_SERVER=""
+    while [[ $COUNT < $NUM_ZOOKEEPERS ]]; do
+      ZOO_CONNECT+="zookeeper${COUNT}:2181"
+      ZOO_SERVER+="server.$((COUNT+1))=zookeeper$COUNT:2888:3888"
+      if [[ $COUNT < $((NUM_ZOOKEEPERS-1)) ]]; then
+        ZOO_CONNECT+=","
+        ZOO_SERVER+=" "
+      fi  
+      COUNT=$((COUNT+1))
+    done
+    fi
    for ORG in $ORDERER_ORGS; do
       COUNT=1
       while [[ "$COUNT" -le $NUM_ORDERERS ]]; do
@@ -71,14 +93,131 @@ function writeStartFabric {
          COUNT=$((COUNT+1))
       done
    done
+   if [ $NUM_KAFKAS -gt 1 ]; then
+      COUNT=0
+      while [[ "$COUNT" -lt $NUM_KAFKAS ]]; do
+         writeKafka
+         COUNT=$((COUNT+1))
+      done
+      COUNT=0
+      while [[ "$COUNT" -lt $NUM_ZOOKEEPERS ]]; do
+         writeZooKeeper
+         COUNT=$((COUNT+1))
+      done   fi
+   COUCHDB_CNT=0;
    for ORG in $PEER_ORGS; do
       COUNT=1
       while [[ "$COUNT" -le $NUM_PEERS ]]; do
          initPeerVars $ORG $COUNT
          writePeer
          COUNT=$((COUNT+1))
+         COUCHDB_CNT=$((COUCHDB_CNT+1))
       done
    done
+   if [ $COUCHDB = "YES" ]; then
+      COUCHDB_CNT=0
+    for ORG in $PEER_ORGS; do
+        COUNT=1
+        while [[ "$COUNT" -le $NUM_PEERS ]]; do
+          initPeerVars $ORG $COUNT
+          writeCouchdb
+          COUNT=$((COUNT+1))
+          COUCHDB_CNT=$((COUCHDB_CNT+1))
+        done
+    done
+  fi   
+}
+
+function writeZooKeeper {
+  echo "  zookeeper$COUNT:"
+  echo "    extends:"
+  echo "      file: dc-orderer-kafka-base.yml"
+  echo "      service: zookeeper"  
+  echo "    container_name: zookeeper$COUNT"
+  echo "    environment:"
+  echo "      - ZOO_MY_ID=$COUNT"
+  echo "      - ZOO_SERVERS=$ZOO_SERVER"
+  echo "    networks:"
+  echo "      - $NETWORK"
+  echo ""
+  }
+
+function writeKafka {
+  echo "  kafka$COUNT:"
+  echo "    extends:"
+  echo "      file: dc-orderer-kafka-base.yml"
+  echo "      service: kafka"  
+  echo "    container_name: kafka$COUNT"
+  # echo "    image: hyperledger/fabric-kafka:x86_64-1.1.0-preview"
+  # echo "    restart: always"
+  echo "    environment:"
+  echo "      - KAFKA_BROKER_ID=$COUNT"
+              # if [[ $COUNT = 0 ]]; then
+  # echo "      - KAFKA_MESSAGE_MAX_BYTES=103809024 # 99 * 1024 * 1024 B"
+  # echo "      - KAFKA_REPLICA_FETCH_MAX_BYTES=103809024 # 99 * 1024 * 1024 B"
+  # echo "      - KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE=false"
+  # echo "      - GENERAL_LOGLEVEL=DEBUG"
+  # echo "      - KAFKA_VERBOSE=true"
+  echo "      - KAFKA_DEFAULT_REPLICATION_FACTOR=3"
+  echo "      - KAFKA.MIN_INSYNC_REPLICAS=2"
+  echo "      - KAFKA_ZOOKEEPER_CONNECT=$ZOO_CONNECT"
+  echo "      - KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE=false"
+  echo "      - MIN_INSYNC_REPLICAS=2"
+  echo "      - REPLICA_FETCH_MAX_BYTES=3"
+  echo "      - MESSAGE_MAX_BYTES=99MB"
+  echo "      - LOG_RETENTION_MS=-1"
+              # fi
+  # echo "    ports:"
+  # echo "      - '9092'"
+  # echo "      - '9093'"
+  echo "    networks:"
+  echo "      - $NETWORK"
+  echo "    depends_on:"
+        CNT=0
+        while [[ "$CNT" -lt $NUM_ZOOKEEPERS ]]; do
+         echo "      - zookeeper$CNT"
+         CNT=$((CNT+1))
+      done
+  echo ""
+}
+
+function writeBaseYaml {
+  echo "version: '2'"
+  echo "services:"
+  echo "  zookeeper:"
+  echo "    image: hyperledger/fabric-zookeeper:x86_64-1.1.0-preview"
+  echo "    restart: always"
+  echo "    ports:"
+  echo "      - '2181'"
+  echo "      - '2888'"
+  echo "      - '3888'"
+  echo "  kafka:"
+  echo "    image: hyperledger/fabric-kafka:x86_64-1.1.0-preview"
+  echo "    restart: always"
+  echo "    environment:"
+  echo "      - KAFKA_MESSAGE_MAX_BYTES=103809024 # 99 * 1024 * 1024 B"
+  echo "      - KAFKA_REPLICA_FETCH_MAX_BYTES=103809024 # 99 * 1024 * 1024 B"
+  echo "      - KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE=false"
+  echo "      - GENERAL_LOGLEVEL=DEBUG"
+  echo "      - KAFKA_VERBOSE=true"
+  echo "    ports:"
+  echo "    - '9092'"
+  echo "    - '9093'"
+  echo ""
+}
+
+function writeCouchdb {
+    echo "  couchdb${COUCHDB_CNT}:"
+    echo "    container_name: couchdb${COUCHDB_CNT}"
+    echo "    image: hyperledger/fabric-couchdb:latest"
+    echo "    environment:"
+    echo "      - FABRIC_CA_CLIENT_TLS_CERTFILES=/data/${ORG}-ca-chain.pem"
+    echo "      - ENROLLMENT_URL=https://${PEER_NAME_PASS}@${INT_CA_HOST}:7054"
+    echo "      - CORE_LOGGING_LEVEL=DEBUG"
+    # echo "    ports:"
+    # echo "      - 598${COUCHDB_CNT}:5984"
+    echo "    networks:"
+    echo "      - $NETWORK"
 }
 
 # Write a service to run a fabric test including creating a channel,
@@ -160,6 +299,8 @@ function writeIntermediateCA {
     volumes:
       - ./scripts:/scripts
       - ./$DATA:/$DATA
+    ports:
+      - $API_URL:7054
     networks:
       - $NETWORK
     depends_on:
@@ -195,6 +336,8 @@ function writeOrderer {
     volumes:
       - ./scripts:/scripts
       - ./$DATA:/$DATA
+    ports:
+      - $ORD_PORT:7050
     networks:
       - $NETWORK
     depends_on:
@@ -232,6 +375,11 @@ function writePeer {
       - CORE_PEER_GOSSIP_SKIPHANDSHAKE=true
       - ORG=$ORG
       - ORG_ADMIN_CERT=$ORG_ADMIN_CERT"
+      if [ $COUCHDB = "YES" ]; then
+      # couchdb config
+      echo "      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB"
+      echo "      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb${COUCHDB_CNT}:5984"
+      fi
    if [ $NUM -gt 1 ]; then
       echo "      - CORE_PEER_GOSSIP_BOOTSTRAP=peer1-${ORG}:7051"
    fi
@@ -241,11 +389,17 @@ function writePeer {
       - ./scripts:/scripts
       - ./$DATA:/$DATA
       - /var/run:/host/var/run
+    ports:
+      - $API_URL:7051
+      - $EVT_URL:7053
     networks:
       - $NETWORK
-    depends_on:
-      - setup
-"
+    depends_on:"
+    echo "      - setup"
+      if [ $COUCHDB = "YES" ]; then
+      echo "      - couchdb${COUCHDB_CNT}"
+      fi
+    echo ""
 }
 
 function writeHeader {

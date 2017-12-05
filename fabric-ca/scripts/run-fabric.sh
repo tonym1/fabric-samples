@@ -52,38 +52,38 @@ function main {
    done
 
    # Install chaincode on the 1st peer in each org
-   for ORG in $PEER_ORGS; do
-      initPeerVars $ORG 1
-      installChaincode
-   done
+#    for ORG in $PEER_ORGS; do
+#       initPeerVars $ORG 1
+#       installChaincode
+#    done
 
    # Instantiate chaincode on the 1st peer of the 2nd org
-   makePolicy
-   initPeerVars ${PORGS[1]} 1
-   switchToAdminIdentity
-   logr "Instantiating chaincode on $PEER_HOST ..."
-   peer chaincode instantiate -C $CHANNEL_NAME -n mycc -v 1.0 -c '{"Args":["init","a","100","b","200"]}' -P "$POLICY" $ORDERER_PORT_ARGS
+#    makePolicy
+#    initPeerVars ${PORGS[0]} 1
+#    switchToAdminIdentity
+#    logr "Instantiating chaincode on $PEER_HOST ..."
+#    peer chaincode instantiate -C $CHANNEL_NAME -n poe -v 1.0 -c '{"Args":["init","setloglevel","debug"]}' -P "$POLICY" $ORDERER_PORT_ARGS
 
-   # Query chaincode from the 1st peer of the 1st org
-   initPeerVars ${PORGS[0]} 1
-   switchToUserIdentity
-   chaincodeQuery 100
+#    # Query chaincode from the 1st peer of the 1st org
+#    initPeerVars ${PORGS[0]} 1
+#    switchToUserIdentity
+#    chaincodeQuery 100
 
-   # Invoke chaincode on the 1st peer of the 1st org
-   initPeerVars ${PORGS[0]} 1
-   switchToUserIdentity
-   logr "Sending invoke transaction to $PEER_HOST ..."
-   peer chaincode invoke -C $CHANNEL_NAME -n mycc -c '{"Args":["invoke","a","b","10"]}' $ORDERER_PORT_ARGS
+#    # Invoke chaincode on the 1st peer of the 1st org
+#    initPeerVars ${PORGS[0]} 1
+#    switchToUserIdentity
+#    logr "Sending invoke transaction to $PEER_HOST ..."
+#    peer chaincode invoke -C $CHANNEL_NAME -n mycc -c '{"Args":["invoke","a","b","10"]}' $ORDERER_PORT_ARGS
 
-   ## Install chaincode on 2nd peer of 2nd org
-   initPeerVars ${PORGS[1]} 2
-   installChaincode
+#    ## Install chaincode on 2nd peer of 2nd org
+#    initPeerVars ${PORGS[1]} 2
+#    installChaincode
 
-   # Query chaincode on 2nd peer of 2nd org
-   sleep 10
-   initPeerVars ${PORGS[1]} 2
-   switchToUserIdentity
-   chaincodeQuery 90
+#    # Query chaincode on 2nd peer of 2nd org
+#    sleep 10
+#    initPeerVars ${PORGS[1]} 2
+#    switchToUserIdentity
+#    chaincodeQuery 90
 
    logr "Congratulations!  The tests ran successfully."
 
@@ -165,7 +165,7 @@ function makePolicy  {
 function installChaincode {
    switchToAdminIdentity
    logr "Installing chaincode on $PEER_HOST ..."
-   peer chaincode install -n mycc -v 1.0 -p github.com/hyperledger/fabric-samples/chaincode/abac
+   peer chaincode install -n poe -v 1.0 -p github.com/hyperledger/fabric-samples/chaincode/poe
 }
 
 function finish {

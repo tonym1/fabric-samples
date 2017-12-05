@@ -6,6 +6,7 @@
 #
 
 source $(dirname "$0")/env.sh
+initOrgArrays
 initOrgVars $ORG
 
 set -e

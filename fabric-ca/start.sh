@@ -22,6 +22,12 @@ if [ "$dockerContainers" != "" ]; then
    log "Deleting existing docker containers ..."
    docker rm -f $dockerContainers > /dev/null
 fi
+dockerContainers=$(docker ps -a | grep 'dev\-peer' | awk '$2 {print $1}') 
+echo $dockerContainers
+if [ "$dockerContainers" != "" ]; then
+   log "Deleting existing docker containers ..."
+   docker rm -f $dockerContainers > /dev/null
+fi
 
 # Remove chaincode docker images
 chaincodeImages=`docker images | grep "^dev-peer" | awk '{print $3}'`
@@ -40,13 +46,14 @@ mkdir -p ${DDIR}/logs
 
 # Create the docker-compose file
 ${SDIR}/makeDocker.sh
-
 # Create the docker containers
 log "Creating docker containers ..."
 docker-compose up -d
 
 # Wait for the setup container to complete
 dowait "the 'setup' container to finish registering identities, creating the genesis block and other artifacts" 90 $SDIR/$SETUP_LOGFILE $SDIR/$SETUP_SUCCESS_FILE
+${SDIR}/makeNetwork.sh
+${SDIR}/makeOrgs.sh
 
 # Wait for the run container to start and then tails it's summary log
 dowait "the docker 'run' container to start" 60 ${SDIR}/${SETUP_LOGFILE} ${SDIR}/${RUN_SUMFILE}
